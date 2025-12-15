@@ -1,55 +1,24 @@
-import os
-from pathlib import Path
-
+import cv2
 import depthai as dai
-from utils.snaps_producer import SnapsProducer
-from depthai_nodes.node.parsing_neural_network import ParsingNeuralNetwork
 
+print("PatchSight — Camera anchor (DepthAI v3)")
 
-model = "luxonis/yolov6-nano:r2-coco-512x288"
+with dai.Pipeline() as pipeline:
+    cam = pipeline.create(dai.node.Camera).build()
 
-visualizer = dai.RemoteConnection(httpPort=8082)
-device = dai.Device()
-
-api_key = "<your api key>" # Replace with your actual API key
-
-
-with dai.Pipeline(device) as pipeline:
-    print("Creating pipeline...")
-
-    model_description = dai.NNModelDescription(model)
-    platform = device.getPlatformAsString()
-    model_description.platform = platform
-    nn_archive = dai.NNArchive(
-        dai.getModelFromZoo(
-            model_description,
-            apiKey=api_key,
-        )
-    )
-
-    input_node = pipeline.create(dai.node.Camera).build()
-
-    nn_with_parser = pipeline.create(ParsingNeuralNetwork).build(
-        input_node, nn_archive
-    )
-
-    visualizer.addTopic("Video", nn_with_parser.passthrough, "images")
-    visualizer.addTopic("Visualizations", nn_with_parser.out, "images")
-
-    snaps_producer = pipeline.create(SnapsProducer).build(
-        nn_with_parser.passthrough,
-        nn_with_parser.out,
-        label_map=nn_archive.getConfigV1().model.heads[0].metadata.classes,
-    )
-    
-
-    print("Pipeline created.")
+    rgbQ = cam.requestOutput(
+        size=(640, 480),
+        type=dai.ImgFrame.Type.BGR888p,
+        resizeMode=dai.ImgResizeMode.CROP,   # <-- CORRECT NAME
+        fps=30,
+        enableUndistortion=True
+    ).createOutputQueue()
 
     pipeline.start()
-    visualizer.registerPipeline(pipeline)
 
     while pipeline.isRunning():
-        key = visualizer.waitKey(1)
-        if key == ord("q"):
-            print("Got q key from the remote connection!")
+        frame = rgbQ.get().getCvFrame()
+        cv2.imshow("PatchSight RGB (Undistorted)", frame)
+
+        if cv2.waitKey(1) == ord("q"):
             break
